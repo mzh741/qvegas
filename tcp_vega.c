@@ -35,7 +35,6 @@
 #include <linux/module.h>
 #include <linux/skbuff.h>
 #include <linux/inet_diag.h>
-#include <stdio.h>
 
 #include <net/tcp.h>
 
@@ -151,7 +150,7 @@ u32 qvegas_undo_cwnd(struct sock *sk)
 {
 	struct qvegas *qvegas = inet_csk_ca(sk);
 
-	return max(qvegas->lost_cwnd, 2U);
+	return max(qvegas->lost_cwnd, 8500U);
 }
 
 void tcp_qvegas_state(struct sock *sk, u8 ca_state)
