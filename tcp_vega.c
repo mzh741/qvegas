@@ -190,8 +190,8 @@ static inline u32 tcp_qvegas_ssthresh(struct tcp_sock *tp)
 	struct qvegas *qvegas = inet_csk_ca(sk);
 
 	if (tp->lost_out)
-		qvegas->lost_cwnd = max(tp->snd_cwnd - qvegas->reno_inc>>1U, 2U);
-	return  max(min(tp->snd_ssthresh, tp->snd_cwnd-1), 2U);
+		qvegas->lost_cwnd = max(tp->snd_cwnd - qvegas->reno_inc>>1U, 8500U);
+	return  max(max(tp->snd_ssthresh, tp->snd_cwnd-1), 8500U);
 }
 
 static void tcp_qvegas_cong_avoid(struct sock *sk, u32 ack, u32 acked)
@@ -353,7 +353,7 @@ static struct tcp_congestion_ops tcp_qvegas __read_mostly = {
 	.get_info	= tcp_qvegas_get_info,
 
 	.owner		= THIS_MODULE,
-	.name		= "qvegas",
+	.name		= "vega",
 };
 
 static int __init tcp_qvegas_register(void)
