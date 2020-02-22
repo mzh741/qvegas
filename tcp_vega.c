@@ -54,7 +54,7 @@ struct qvegas {
 };
 
 static int alpha = 2;
-static int beta  = 4;
+static int beta  = 16; /*大于beta则减，原4*/
 static int gamma = 1;
 
 module_param(alpha, int, 0644);
@@ -109,7 +109,7 @@ void tcp_qvegas_init(struct sock *sk)
 	struct qvegas *qvegas = inet_csk_ca(sk);
 	
 	if (qvegas->baseRTT == 0)
-		qvegas->lost_cwnd = TCP_INIT_CWND; 
+		qvegas->lost_cwnd = TCP_INIT_CWND * 100; 
 	qvegas->baseRTT = 0x7fffffff;
 	qvegas_enable(sk);
 }
@@ -158,12 +158,13 @@ void tcp_qvegas_state(struct sock *sk, u8 ca_state)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct qvegas *qvegas = inet_csk_ca(sk);
 
-	if (ca_state == TCP_CA_Open) {
-		qvegas_enable(sk);
-		tp->snd_cwnd = max(qvegas->lost_cwnd, 2U);
-	} else {
-		qvegas_disable(sk);
-	}
+	/* Begin taking QVegas samples next time we send something. */
+	qvegas->doing_qvegas_now = 1;
+
+	/* Set the beginning of the next send window. */
+	qvegas->beg_snd_nxt = tp->snd_nxt;
+	tp->snd_cwnd = max(qvegas->lost_cwnd, 8500U);
+	
 }
 EXPORT_SYMBOL_GPL(tcp_qvegas_state);
 
@@ -199,12 +200,12 @@ static void tcp_qvegas_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct qvegas *qvegas = inet_csk_ca(sk);
 
-	if (!qvegas->doing_qvegas_now) {
+	/*if (!qvegas->doing_qvegas_now) {
 		u32 cwnd = tp->snd_cwnd;
 		tcp_reno_cong_avoid(sk, ack, acked);
 		qvegas->reno_inc += tp->snd_cwnd - cwnd;
 		return;
-	}
+	}*/
 
 	if (after(ack, qvegas->beg_snd_nxt)) {
 		/* Do the QVegas once-per-RTT cwnd adjustment. */
@@ -212,7 +213,7 @@ static void tcp_qvegas_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 		/* Save the extent of the current window so we can use this
 		 * at the end of the next RTT.
 		 */
-		tp->snd_cwnd = qvegas->lost_cwnd;
+		tp->snd_cwnd = max(qvegas->lost_cwnd,8500);
 		qvegas->beg_snd_nxt  = tp->snd_nxt;
 
 		/* We do the QVegas calculations only if we got enough RTT
@@ -225,9 +226,9 @@ static void tcp_qvegas_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 		 */
 
 		if (qvegas->cntRTT <= 2) {
-			u32 cwnd = tp->snd_cwnd;
-			tcp_reno_cong_avoid(sk, ack, acked);
-			qvegas->reno_inc += tp->snd_cwnd - cwnd;
+			u32 cwnd = max(tp->snd_cwnd,8500);
+			//tcp_reno_cong_avoid(sk, ack, acked);
+			//qvegas->reno_inc += tp->snd_cwnd - cwnd;
 		} else  {
 			u32 rtt, diff;
 			u64 target_cwnd;//, tg;
@@ -251,7 +252,7 @@ static void tcp_qvegas_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 			 * This is:
 			 *     (actual rate in segments) * baseRTT
 			 */
-			target_cwnd = (u64)tp->snd_cwnd * qvegas->baseRTT;
+			target_cwnd = (u64)tp->snd_cwnd * qvegas->baseRTT + 8500;
 			do_div(target_cwnd, rtt);
 
 			/* Calculate the difference between the window we had,
@@ -272,7 +273,7 @@ static void tcp_qvegas_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 				 * truncation robs us of full link
 				 * utilization.
 				 */
-				tp->snd_cwnd = min(tp->snd_cwnd, (u32)target_cwnd+1);
+				tp->snd_cwnd = max(tp->snd_cwnd, (u32)target_cwnd + 1);
 				tp->snd_ssthresh = tcp_qvegas_ssthresh(tp);
 
 			} else if (tcp_in_slow_start(tp)) {
@@ -303,18 +304,18 @@ static void tcp_qvegas_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 				}
 			}
 
-			if (tp->snd_cwnd < 4)
-				tp->snd_cwnd = 4;
+			if (tp->snd_cwnd < 8500)/*不确定的改变，原4*/
+				tp->snd_cwnd = 8500;
 			else if (tp->snd_cwnd > tp->snd_cwnd_clamp)
 				tp->snd_cwnd = tp->snd_cwnd_clamp;
 
-			tp->snd_ssthresh = tcp_current_ssthresh(sk);
+			tp->snd_ssthresh = tcp_qvegas_ssthresh(tp);
 		}
 
 		/* Wipe the slate clean for the next RTT. */
 		qvegas->cntRTT = 0;
 		qvegas->minRTT = 0x7fffffff;
-		qvegas->lost_cwnd = tp->snd_cwnd;
+		qvegas->lost_cwnd = max(tp->snd_cwnd,8500);
 	}
 	/* Use normal slow start */
 	else if (tcp_in_slow_start(tp)) {
