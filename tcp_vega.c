@@ -35,6 +35,7 @@
 #include <linux/module.h>
 #include <linux/skbuff.h>
 #include <linux/inet_diag.h>
+#include <stdio.h>
 
 #include <net/tcp.h>
 
